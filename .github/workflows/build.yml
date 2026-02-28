@@ -25,3 +25,4 @@ jobs:
         with:
           name: Windows-Audio-Switcher
           path: dist/*.exe
+          

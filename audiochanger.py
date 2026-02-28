@@ -5,24 +5,24 @@ import platform
 import os
 import sys
 
+# Windows-only flag to hide console windows
+CREATE_NO_WINDOW = 0x08000000
+
 class AudioSwitcher:
     def __init__(self, root):
         self.root = root
         self.root.title("Audio Switcher")
-        self.root.geometry("300x250")
+        self.root.geometry("300x280")
         self.root.configure(bg='#2e2e2e')
         
-        # FIX: OS-Specific Window Styling
+        # OS-Specific Window Styling
         if platform.system() == "Linux":
             try:
-                # Styles the window as a small utility popup on Pop!_OS
                 self.root.attributes('-type', 'utility')
             except:
                 pass 
         elif platform.system() == "Windows":
-            # Styles it as a tool window (no minimize/maximize) on Windows 11
             self.root.attributes('-toolwindow', True)
-            # Keeps it on top of other windows so you can find it easily
             self.root.attributes('-topmost', True) 
 
         self.label = tk.Label(root, text="SELECT AUDIO OUTPUT", bg='#2e2e2e', fg='white', font=('Sans', 9, 'bold'))
@@ -38,7 +38,7 @@ class AudioSwitcher:
         sinks = []
         try:
             if platform.system() == "Linux":
-                # Linux/Pipewire Logic
+                # Original Linux logic
                 result = subprocess.run(["wpctl", "status"], capture_output=True, text=True)
                 if "Sinks:" in result.stdout:
                     parts = result.stdout.split("Sinks:")
@@ -54,12 +54,20 @@ class AudioSwitcher:
                                 })
             
             elif platform.system() == "Windows":
-                # Windows Logic: Using PowerShell to list playback devices
-                proc = subprocess.run(["powershell", "-Command", "Get-CimInstance Win32_SoundDevice | Select-Object Name"], capture_output=True, text=True)
-                for line in proc.stdout.splitlines()[3:]: # Skip PowerShell headers
-                    name = line.strip()
-                    if name:
-                        sinks.append({"id": name, "name": name, "active": False})
+                # STEALTH: Added creationflags to hide PowerShell window
+                proc = subprocess.run(
+                    ["powershell", "-Command", "Get-CimInstance Win32_SoundDevice | Select-Object Name"], 
+                    capture_output=True, 
+                    text=True,
+                    creationflags=CREATE_NO_WINDOW
+                )
+                # Skip PowerShell headers (first 3 lines)
+                lines = proc.stdout.splitlines()
+                if len(lines) > 3:
+                    for line in lines[3:]:
+                        name = line.strip()
+                        if name:
+                            sinks.append({"id": name, "name": name, "active": False})
         except Exception as e:
             print(f"Error fetching devices: {e}")
         return sinks
@@ -68,19 +76,17 @@ class AudioSwitcher:
         if platform.system() == "Linux":
             subprocess.run(["wpctl", "set-default", device_id])
         elif platform.system() == "Windows":
-            # Path handling for the bundled nircmd.exe
+            # Find bundled nircmd.exe
             if getattr(sys, 'frozen', False):
-                # If running as .exe, find nircmd inside the temporary folder
                 base_path = sys._MEIPASS
             else:
                 base_path = os.path.abspath(".")
             
             nircmd_path = os.path.join(base_path, "nircmd.exe")
             
-            # Use NirCmd to force switch default output (bypasses Windows lock)
-            # 1 = Default Multimedia, 2 = Default Communications
-            subprocess.run([nircmd_path, "setdefaultsounddevice", device_id, "1"])
-            subprocess.run([nircmd_path, "setdefaultsounddevice", device_id, "2"])
+            # STEALTH: Added creationflags to hide NirCmd execution
+            subprocess.run([nircmd_path, "setdefaultsounddevice", device_id, "1"], creationflags=CREATE_NO_WINDOW)
+            subprocess.run([nircmd_path, "setdefaultsounddevice", device_id, "2"], creationflags=CREATE_NO_WINDOW)
         
         self.refresh_ui()
 
@@ -102,10 +108,11 @@ class AudioSwitcher:
                 )
                 btn.pack(fill='x', padx=10, pady=2)
             self.current_devices = new_devices
-        # Checks for hardware changes every 3 seconds
+        # Refresh every 3 seconds to detect plug/unplug events
         self.root.after(3000, self.refresh_ui)
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = AudioSwitcher(root)
     root.mainloop()
+

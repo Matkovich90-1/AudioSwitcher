@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build Windows Audio Switcher
 on: [push]
 
 jobs:
@@ -16,12 +16,13 @@ jobs:
       - name: Install PyInstaller
         run: pip install pyinstaller
 
-      - name: Build EXE
-        # Change 'your_script.py' to your actual filename
-        run: pyinstaller --onefile your_script.py 
+      - name: Build EXE with NirCmd bundled
+        # --add-data "nircmd.exe;." includes nircmd inside the exe
+        # --noconsole hides the black terminal window
+        run: pyinstaller --onefile --noconsole --add-data "nircmd.exe;." audio_switcher.py
 
-      - name: Upload Result
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Windows-Program
+          name: Windows-Audio-Switcher
           path: dist/*.exe

@@ -19,7 +19,7 @@ jobs:
       - name: Build EXE with NirCmd bundled
         # --add-data "nircmd.exe;." includes nircmd inside the exe
         # --noconsole hides the black terminal window
-        run: pyinstaller --onefile --noconsole --add-data "nircmd.exe;." audio_switcher.py
+        run: pyinstaller --onefile --noconsole --add-data "nircmd.exe;." audio_changer.py
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

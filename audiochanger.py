@@ -14,7 +14,7 @@ class AudioSwitcher:
         
         if platform.system() == "Windows":
             self.root.attributes('-toolwindow', True)
-            self.root.attributes('-topmost', True) 
+ 
         else:
             try: self.root.attributes('-type', 'utility')
             except: pass

@@ -1,33 +1,46 @@
-name: Build Windows Audio Switcher
+name: Build Cross-Platform Audio Switcher
 on: [push]
 
 jobs:
-  build:
+  # --- WINDOWS BUILD ---
+  build-windows:
     runs-on: windows-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install Dependencies
+      - name: Build EXE
         run: |
-          pip install pyinstaller sounddevice
-
-      - name: Build EXE with PyInstaller
-        # This is your updated line that fixes the empty list issue
-        run: pyinstaller --onefile --noconsole --icon="app_icon.ico" --add-data "nircmd.exe;." audiochanger.py
-
-      - name: Build Installer (Inno Setup)
+          pip install pyinstaller
+          pyinstaller --onefile --noconsole --icon="app_icon.ico" --add-data "nircmd.exe;." --add-data "app_icon.ico;." audiochanger.py
+      - name: Create Installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
         with:
           path: installer.iss
-
-      - name: Upload Installer Artifact
+      - name: Upload Windows
         uses: actions/upload-artifact@v4
         with:
-          name: Audio-Switcher-Setup
+          name: Audio-Switcher-Windows
           path: dist/AudioSwitcherInstaller.exe
+
+  # --- DEBIAN/LINUX BUILD ---
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+          pip install pyinstaller
+      - name: Build Binary
+        run: pyinstaller --onefile --noconsole audiochanger.py
+      - name: Upload Linux Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: Audio-Switcher-Linux
+          path: dist/audiochanger

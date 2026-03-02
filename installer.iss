@@ -8,17 +8,18 @@ OutputBaseFilename=AudioSwitcherInstaller
 Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=admin
+; --- ADD THIS LINE TO SET THE INSTALLER ICON ---
+SetupIconFile=app_icon.ico
 
 [Files]
-; This tells the installer to include your exe
 Source: "dist\audiochanger.exe"; DestDir: "{app}"; Flags: ignoreversion
+; --- ADD THIS LINE TO INCLUDE THE ICON IN THE INSTALL FOLDER ---
+Source: "app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-; Creates the desktop shortcut
-Name: "{autodesktop}\Audio Switcher"; Filename: "{app}\audiochanger.exe"
-; Creates a Start Menu shortcut
-Name: "{group}\Audio Switcher"; Filename: "{app}\audiochanger.exe"
+; --- ADD IconFilename TO THESE LINES TO SET THE DESKTOP/START ICONS ---
+Name: "{autodesktop}\Audio Switcher"; Filename: "{app}\audiochanger.exe"; IconFilename: "{app}\app_icon.ico"
+Name: "{group}\Audio Switcher"; Filename: "{app}\audiochanger.exe"; IconFilename: "{app}\app_icon.ico"
 
 [Run]
-; Option to launch right after installing
 Filename: "{app}\audiochanger.exe"; Description: "Launch Audio Switcher"; Flags: nowait postinstall skipifsilent

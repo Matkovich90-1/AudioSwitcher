@@ -5,7 +5,7 @@ Designed specifically to bypass "locked" settings on unactivated Windows 11 syst
 
 ## 📥 Downloads
 
-**Get the latest version from the [Releases](https://github.com) page.**
+**Get the latest version from the [Releases](https://github.com/Matkovich90-1/AudioSwitcher/releases) page.**
 
 ---
 

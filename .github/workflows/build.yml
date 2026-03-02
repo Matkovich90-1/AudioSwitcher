@@ -15,14 +15,13 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          pip install pyinstaller pycaw comtypes
+          pip install pyinstaller sounddevice
 
       - name: Build EXE with PyInstaller
-        # This creates the raw exe inside the 'dist' folder
-        run: pyinstaller --onefile --noconsole --add-data "nircmd.exe;." audiochanger.py
+        # This is your updated line that fixes the empty list issue
+        run: pyinstaller --onefile --noconsole --collect-all sounddevice --add-data "nircmd.exe;." audiochanger.py
 
       - name: Build Installer (Inno Setup)
-        # This turns that exe into a Setup Wizard
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
         with:
           path: installer.iss

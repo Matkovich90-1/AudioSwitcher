@@ -19,7 +19,7 @@ jobs:
 
       - name: Build EXE with PyInstaller
         # This is your updated line that fixes the empty list issue
-        run: pyinstaller --onefile --noconsole --add-data "nircmd.exe;." audiochanger.py
+        run: pyinstaller --onefile --noconsole --icon="app_icon.ico" --add-data "nircmd.exe;." audiochanger.py
 
       - name: Build Installer (Inno Setup)
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.2

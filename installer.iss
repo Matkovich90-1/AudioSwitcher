@@ -7,6 +7,7 @@ OutputDir=dist
 OutputBaseFilename=AudioSwitcherInstaller
 Compression=lzma
 SolidCompression=yes
+PrivilegesRequired=admin
 
 [Files]
 ; This tells the installer to include your exe

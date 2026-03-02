@@ -1,34 +1,30 @@
 import tkinter as tk
 import subprocess
+import re
 import platform
 import os
 import sys
-import re
 
 class AudioSwitcher:
     def __init__(self, root):
         self.root = root
         self.root.title("Audio Switcher")
-        self.root.geometry("320x400")
+        self.root.geometry("320x350")
         self.root.configure(bg='#2e2e2e')
         
-        if platform.system() == "Windows":
-            self.root.attributes('-toolwindow', True)
-            self.root.attributes('-topmost', True) 
+        if platform.system() == "Linux":
+            self.root.attributes('-type', 'utility')
         else:
-            try: self.root.attributes('-type', 'utility')
-            except: pass
+            self.root.attributes('-toolwindow', True)
+            self.root.attributes('-topmost', True)
 
-        # --- HEADER & REFRESH BUTTON ---
-        tk.Label(root, text="AUDIO OUTPUT", bg='#2e2e2e', fg='white', font=('Sans', 10, 'bold')).pack(pady=10)
-        
-        self.refresh_btn = tk.Button(root, text="🔄 REFRESH DEVICES", command=self.refresh_ui, 
-                                     bg='#1e88e5', fg='white', relief='flat', font=('Sans', 8, 'bold'))
-        self.refresh_btn.pack(pady=5, padx=20, fill='x')
+        self.label = tk.Label(root, text="SELECT AUDIO OUTPUT", bg='#2e2e2e', fg='white', font=('Sans', 9, 'bold'))
+        self.label.pack(pady=10)
 
         self.button_frame = tk.Frame(root, bg='#2e2e2e')
         self.button_frame.pack(fill='both', expand=True)
 
+        self.current_devices = []
         self.refresh_ui()
 
     def get_audio_sinks(self):
@@ -37,20 +33,28 @@ class AudioSwitcher:
             if platform.system() == "Linux":
                 result = subprocess.run(["wpctl", "status"], capture_output=True, text=True)
                 if "Sinks:" in result.stdout:
-                    parts = result.stdout.split("Sinks:")[1].split("Sink endpoints:")[0]
-                    for line in parts.split('\n'):
-                        match = re.search(r'(\d+)\.\s+(.*)', line)
-                        if match:
-                            sinks.append({"id": match.group(1), "name": match.group(2).split("[")[0].strip()})
+                    parts = result.stdout.split("Sinks:")
+                    if len(parts) > 1:
+                        sinks_section = parts[1].split("Sink endpoints:")[0]
+                        for line in sinks_section.split('\n'):
+                            match = re.search(r'(\d+)\.\s+(.*)', line)
+                            if match:
+                                sinks.append({
+                                    "id": match.group(1),
+                                    "name": re.split(r'\[', match.group(2))[0].strip(),
+                                    "active": "*" in line
+                                })
             
             elif platform.system() == "Windows":
-                # STEALTH POWERSHELL: Runs only when you click 'Refresh'
-                cmd = 'powershell -Command "Get-CimInstance Win32_SoundDevice | Select-Object -ExpandProperty Name"'
-                proc = subprocess.run(cmd, capture_output=True, text=True, shell=True, creationflags=0x08000000)
-                for line in proc.stdout.splitlines():
+                # ADDED: 0x08000000 flag to stop the flashing black box
+                proc = subprocess.run(
+                    ["powershell", "-Command", "Get-CimInstance Win32_SoundDevice | Select-Object Name"], 
+                    capture_output=True, text=True, creationflags=0x08000000
+                )
+                for line in proc.stdout.splitlines()[3:]:
                     name = line.strip()
                     if name:
-                        sinks.append({"id": name, "name": name})
+                        sinks.append({"id": name, "name": name, "active": False})
         except Exception as e:
             print(f"Error: {e}")
         return sinks
@@ -59,39 +63,42 @@ class AudioSwitcher:
         if platform.system() == "Linux":
             subprocess.run(["wpctl", "set-default", device_id])
         elif platform.system() == "Windows":
-            base_path = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.abspath(".")
+            # --- FIX FOR INSTALLER ---
+            # This finds nircmd.exe inside the bundled .exe folder
+            if getattr(sys, 'frozen', False):
+                base_path = sys._MEIPASS
+            else:
+                base_path = os.path.abspath(".")
+            
             nircmd_path = os.path.join(base_path, "nircmd.exe")
-            # Force switch (1=Default, 2=Communication)
+            
+            # Switch audio quietly
             subprocess.run([nircmd_path, "setdefaultsounddevice", device_id, "1"], creationflags=0x08000000)
             subprocess.run([nircmd_path, "setdefaultsounddevice", device_id, "2"], creationflags=0x08000000)
-        # Note: We don't auto-refresh here to save resources
-        self.label_status = tk.Label(self.root, text=f"Switched to {device_id[:15]}...", bg='#2e2e2e', fg='#4CAF50', font=('Sans', 7))
-        self.label_status.pack()
-        self.root.after(2000, self.label_status.destroy)
+        
+        self.refresh_ui()
 
     def refresh_ui(self):
-        # Change button text to show it's working
-        self.refresh_btn.config(text="⌛ SCANNING...", state='disabled')
-        self.root.update_idletasks()
-        
         new_devices = self.get_audio_sinks()
-        
-        for widget in self.button_frame.winfo_children():
-            widget.destroy()
+        if new_devices != self.current_devices:
+            for widget in self.button_frame.winfo_children():
+                widget.destroy()
 
-        if not new_devices:
-            tk.Label(self.button_frame, text="No devices found.\nClick Refresh.", bg='#2e2e2e', fg='gray').pack(pady=20)
-        else:
             for dev in new_devices:
-                btn = tk.Button(self.button_frame, text=f"🔊 {dev['name']}", 
-                                command=lambda d=dev['id']: self.switch_audio(d),
-                                bg='#404040', fg='white', relief='flat', anchor='w', padx=10)
-                btn.pack(fill='x', padx=15, pady=3)
-        
-        self.refresh_btn.config(text="🔄 REFRESH DEVICES", state='normal')
+                icon = "✅ " if dev['active'] else "🔊 "
+                bg_color = '#1e88e5' if dev['active'] else '#404040'
+                
+                btn = tk.Button(
+                    self.button_frame, 
+                    text=f"{icon}{dev['name']}",
+                    command=lambda d=dev['id']: self.switch_audio(d),
+                    bg=bg_color, fg='white', relief='flat', anchor='w', padx=10
+                )
+                btn.pack(fill='x', padx=10, pady=2)
+            self.current_devices = new_devices
+        self.root.after(3000, self.refresh_ui)
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = AudioSwitcher(root)
     root.mainloop()
-

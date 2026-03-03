@@ -9,7 +9,7 @@ class AudioSwitcher:
     def __init__(self, root):
         self.root = root
         self.root.title("Audio Switcher")
-        self.root.geometry("320x400")
+        self.root.geometry("320x320")
         self.root.configure(bg='#2e2e2e')
         
         if platform.system() == "Windows":

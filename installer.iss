@@ -8,18 +8,21 @@ OutputBaseFilename=AudioSwitcherInstaller
 Compression=lzma
 SolidCompression=yes
 PrivilegesRequired=admin
-; --- ADD THIS LINE TO SET THE INSTALLER ICON ---
-SetupIconFile=app_icon.ico
+; This sets the icon for the Installer/Setup .exe file
+SetupIconFile=installer_icon.ico
 
 [Files]
+; The actual program built by PyInstaller
 Source: "dist\audiochanger.exe"; DestDir: "{app}"; Flags: ignoreversion
-; --- ADD THIS LINE TO INCLUDE THE ICON IN THE INSTALL FOLDER ---
+; The app icon needs to be copied to the install folder so the shortcuts can find it
 Source: "app_icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-; --- ADD IconFilename TO THESE LINES TO SET THE DESKTOP/START ICONS ---
+; Desktop Shortcut - specifically using the app_icon.ico
 Name: "{autodesktop}\Audio Switcher"; Filename: "{app}\audiochanger.exe"; IconFilename: "{app}\app_icon.ico"
+; Start Menu Shortcut
 Name: "{group}\Audio Switcher"; Filename: "{app}\audiochanger.exe"; IconFilename: "{app}\app_icon.ico"
 
 [Run]
+; Option to launch the app immediately after the installer finishes
 Filename: "{app}\audiochanger.exe"; Description: "Launch Audio Switcher"; Flags: nowait postinstall skipifsilent

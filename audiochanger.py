@@ -1,60 +1,101 @@
 import tkinter as tk
-import subprocess
-import re
-import platform
-import os
-import sys
-import ctypes
-
-if platform.system() == "Windows":
-    try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(1)
-    except:
-        try: ctypes.windll.user32.SetProcessDPIAware()
-        except: pass
+from tkinter import simpledialog, messagebox
+import subprocess, re, platform, os, sys, json
 
 class AudioSwitcher:
     def __init__(self, root):
         self.root = root
         self.root.title("Audio Switcher")
-        self.root.geometry("300x250") 
+        
+        # --- POSITION & SIZE ---
+        # 300x300 is size, +15+15 snaps it to top-left corner
+        self.root.geometry("300x300+15+15") 
         self.root.configure(bg='#121212', highlightbackground='#1e88e5', highlightthickness=1)
         
+        # --- CROSS-PLATFORM STORAGE & BORDERLESS FIX ---
         if platform.system() == "Windows":
+            self.config_path = os.path.join(os.environ.get('APPDATA', '.'), 'AudioSwitcher_Config.json')
+            import ctypes
+            try: ctypes.windll.shcore.SetProcessDpiAwareness(1)
+            except: pass
+            # Windows borderless
             self.root.overrideredirect(True)
-            self.root.bind("<Button-1>", self.start_move)
-            self.root.bind("<B1-Motion>", self.do_move)
+        else:
+            # Linux (Pop!_OS) path
+            self.config_path = os.path.expanduser('~/.audio_switcher_config.json')
+            # Linux borderless fix: Removes the outer gray bar (GNOME title bar)
+            self.root.attributes('-type', 'splash') 
+            
+        self.config = self.load_config()
+        self.root.bind("<Button-1>", self.start_move)
+        self.root.bind("<B1-Motion>", self.do_move)
 
+        self.active_menu = None
+        self.active_device_id = None
+
+        # --- CUSTOM TITLE BAR ---
         title_bar = tk.Frame(root, bg='#1e1e1e', bd=0)
         title_bar.pack(fill='x')
+        tk.Label(title_bar, text="  AUDIO v1.0.2", bg='#1e1e1e', fg='#666666', font=('Sans', 7, 'bold')).pack(side='left', pady=4)
         
-        tk.Label(title_bar, text="  AUDIO OUTPUT", bg='#1e1e1e', fg='#666666', 
-                 font=('Segoe UI', 7, 'bold')).pack(side='left', pady=4)
+        # Settings Gear (Unhide All)
+        tk.Button(title_bar, text="⚙", command=self.unhide_all, bg='#1e1e1e', fg='#666666', 
+                  relief='flat', font=('Sans', 8)).pack(side='right', padx=5)
         
+        # Close Button
         tk.Button(title_bar, text="✕", command=root.quit, bg='#1e1e1e', fg='#666666', 
-                  relief='flat', font=('Segoe UI', 8), padx=10, 
-                  activebackground='#cc3333', activeforeground='white').pack(side='right')
+                  relief='flat', font=('Sans', 8), padx=10, activebackground='#cc3333').pack(side='right')
 
+        # --- REFRESH BUTTON ---
         self.refresh_btn = tk.Button(root, text="REFRESH DEVICES", command=self.refresh_ui, 
-                                     bg='#121212', fg='#1e88e5', relief='flat', 
-                                     font=('Segoe UI', 8, 'bold'), activebackground='#1e1e1e')
+                                     bg='#121212', fg='#1e88e5', relief='flat', font=('Sans', 8, 'bold'))
         self.refresh_btn.pack(pady=5, padx=15, fill='x')
 
         self.button_frame = tk.Frame(root, bg='#121212')
         self.button_frame.pack(fill='both', expand=True)
 
-        self.active_device_id = None
-        self.current_devices = []
         self.refresh_ui()
 
-    def start_move(self, event):
-        self.x = event.x
-        self.y = event.y
+    def load_config(self):
+        try:
+            if os.path.exists(self.config_path):
+                with open(self.config_path, 'r') as f:
+                    data = json.load(f)
+                    if "nicknames" not in data: data["nicknames"] = {}
+                    if "hidden" not in data: data["hidden"] = []
+                    return data
+        except: pass
+        return {"nicknames": {}, "hidden": []}
 
-    def do_move(self, event):
-        x = self.root.winfo_x() + (event.x - self.x)
-        y = self.root.winfo_y() + (event.y - self.y)
-        self.root.geometry(f"+{x}+{y}")
+    def save_config(self):
+        with open(self.config_path, 'w') as f: json.dump(self.config, f)
+
+    def rename_device(self, dev_id):
+        new_name = simpledialog.askstring("Nickname", f"Rename Device:", parent=self.root)
+        if new_name:
+            self.config["nicknames"][dev_id] = new_name
+            self.save_config()
+            self.refresh_ui()
+
+    def hide_device(self, dev_id):
+        if dev_id not in self.config["hidden"]:
+            self.config["hidden"].append(dev_id)
+            self.save_config()
+            self.refresh_ui()
+
+    def unhide_all(self):
+        self.config["hidden"] = []
+        self.save_config()
+        self.refresh_ui()
+        messagebox.showinfo("Settings", "All devices restored!", parent=self.root)
+
+    def show_menu(self, event, dev_id):
+        if self.active_menu:
+            self.active_menu.destroy()
+        self.active_menu = tk.Menu(self.root, tearoff=0, bg='#1e1e1e', fg='white', activebackground='#1e88e5')
+        self.active_menu.add_command(label="Rename", command=lambda: self.rename_device(dev_id))
+        self.active_menu.add_command(label="Hide", command=lambda: self.hide_device(dev_id))
+        self.active_menu.post(event.x_root, event.y_root)
 
     def get_audio_sinks(self):
         sinks = []
@@ -67,16 +108,36 @@ class AudioSwitcher:
                     for line in s_section.split('\n'):
                         match = re.search(r'(\d+)\.\s+(.*)', line)
                         if match:
-                            sinks.append({"id": match.group(1), "name": match.group(2).split("[")[0].strip()})
+                            raw_id = match.group(1)
+                            raw_name = re.split(r'\[', match.group(2))[0].strip()
+                            if raw_id not in self.config["hidden"]:
+                                name = self.config["nicknames"].get(raw_id, raw_name)
+                                sinks.append({"id": raw_id, "name": name, "active": "*" in line})
             
             elif platform.system() == "Windows":
                 cmd = 'powershell -Command "Get-CimInstance Win32_SoundDevice | Select-Object -ExpandProperty Name"'
                 proc = subprocess.run(cmd, capture_output=True, text=True, shell=True, creationflags=0x08000000)
                 for line in proc.stdout.splitlines():
                     name = line.strip()
-                    if name: sinks.append({"id": name, "name": name})
+                    if name and name not in self.config["hidden"]:
+                        display_name = self.config["nicknames"].get(name, name)
+                        sinks.append({"id": name, "name": display_name, "active": False})
         except: pass
         return sinks
+
+    def refresh_ui(self):
+        devices = self.get_audio_sinks()
+        for widget in self.button_frame.winfo_children(): widget.destroy()
+        
+        for dev in devices:
+            is_active = dev.get('active', False) or (dev['id'] == self.active_device_id)
+            bg_color = '#1e88e5' if is_active else '#121212'
+            btn = tk.Button(self.button_frame, text=f"  {dev['name']}", 
+                            command=lambda d=dev['id']: self.switch_audio(d),
+                            bg=bg_color, fg='white', relief='flat', anchor='w', padx=10, font=('Sans', 9))
+            btn.pack(fill='x', padx=10, pady=2)
+            # Right Click to open Rename/Hide menu
+            btn.bind("<Button-3>", lambda e, d=dev['id']: self.show_menu(e, d))
 
     def switch_audio(self, device_id):
         self.active_device_id = device_id
@@ -89,30 +150,18 @@ class AudioSwitcher:
             subprocess.run([nircmd_path, "setdefaultsounddevice", device_id, "2"], creationflags=0x08000000)
         self.refresh_ui()
 
-    def refresh_ui(self):
-        self.refresh_btn.config(text="SCANNING...", state='disabled')
-        self.root.update_idletasks()
-        new_devices = self.get_audio_sinks()
-        for widget in self.button_frame.winfo_children():
-            widget.destroy()
+    def start_move(self, event):
+        if self.active_menu: self.active_menu.destroy()
+        self.x = event.x
+        self.y = event.y
 
-        if not new_devices:
-            tk.Label(self.button_frame, text="No devices found", bg='#121212', fg='#555555', font=('Segoe UI', 9)).pack(pady=20)
-        else:
-            for dev in new_devices:
-                is_active = (dev['id'] == self.active_device_id)
-                bg_color = '#1e88e5' if is_active else '#1e1e1e'
-                fg_color = 'white' if is_active else '#aaaaaa'
-                
-                btn = tk.Button(self.button_frame, text=f"  {dev['name']}", 
-                                command=lambda d=dev['id']: self.switch_audio(d),
-                                bg=bg_color, fg=fg_color, relief='flat', anchor='w', 
-                                padx=10, font=('Segoe UI', 9), borderwidth=0)
-                btn.pack(fill='x', padx=10, pady=2)
-        
-        self.refresh_btn.config(text="REFRESH DEVICES", state='normal')
+    def do_move(self, event):
+        x = self.root.winfo_x() + (event.x - self.x)
+        y = self.root.winfo_y() + (event.y - self.y)
+        self.root.geometry(f"+{x}+{y}")
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = AudioSwitcher(root)
     root.mainloop()
+

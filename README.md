@@ -1,4 +1,4 @@
-# 🔊 Audio Switcher v1.0
+# 🔊 Audio Switcher vx.x.x
 
 A lightweight, cross-platform tool to quickly switch audio output devices. 
 Designed specifically to bypass "locked" settings on unactivated Windows 11 systems and work natively on Pop!_OS/Debian.

@@ -27,8 +27,8 @@ Designed specifically to bypass "locked" settings on unactivated Windows 11 syst
 
 
 
- 🛠️ How it Works
-    Windows: Uses NirCmd and PowerShell to force audio switching without needing the Windows Settings app.
+🛠️ How it Works
+   Windows: Uses NirCmd and PowerShell to force audio switching without needing the Windows Settings app.
     
-    Linux: Uses wpctl (PipeWire) for native, lag-free switching.
+   Linux: Uses wpctl (PipeWire) for native, lag-free switching.
    

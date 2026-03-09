@@ -6,27 +6,24 @@ class AudioSwitcher:
     def __init__(self, root):
         self.root = root
         self.root.title("Audio Switcher")
+        
+        # --- POSITION & SIZE (Locked for Linux) ---
         self.root.geometry("300x200+15+15") 
+        self.root.update_idletasks()
+        self.root.minsize(300, 200)
+        self.root.maxsize(300, 200)
         self.root.configure(bg='#121212', highlightbackground='#1e88e5', highlightthickness=1)
         
-        # --- ROBUST STORAGE PATHS ---
         if platform.system() == "Windows":
-            self.config_dir = os.environ.get('APPDATA', '.')
-            self.config_path = os.path.join(self.config_dir, 'AudioSwitcher_Config.json')
+            self.config_path = os.path.join(os.environ.get('APPDATA', '.'), 'AudioSwitcher_Config.json')
             import ctypes
             try: ctypes.windll.shcore.SetProcessDpiAwareness(1)
             except: pass
             self.root.overrideredirect(True)
         else:
-            # Linux Standard: Save in a hidden folder in Home
-            self.config_dir = os.path.expanduser('~')
-            self.config_path = os.path.join(self.config_dir, '.audio_switcher_config.json')
+            self.config_path = os.path.expanduser('~/.audio_switcher_config.json')
             self.root.attributes('-type', 'splash') 
             
-        # Ensure the directory exists before doing anything
-        if not os.path.exists(self.config_dir):
-            os.makedirs(self.config_dir, exist_ok=True)
-
         self.config = self.load_config()
         self.root.bind("<Button-1>", self.start_move)
         self.root.bind("<B1-Motion>", self.do_move)
@@ -38,14 +35,10 @@ class AudioSwitcher:
         title_bar.pack(fill='x')
         tk.Label(title_bar, text="  AUDIO v1.0.2", bg='#1e1e1e', fg='#666666', font=('Sans', 7, 'bold')).pack(side='left', pady=4)
         
-        tk.Button(title_bar, text="⚙", command=self.unhide_all, bg='#1e1e1e', fg='#666666', 
-                  relief='flat', font=('Sans', 8)).pack(side='right', padx=5)
-        
-        tk.Button(title_bar, text="✕", command=root.quit, bg='#1e1e1e', fg='#666666', 
-                  relief='flat', font=('Sans', 8), padx=10, activebackground='#cc3333').pack(side='right')
+        tk.Button(title_bar, text="⚙", command=self.unhide_all, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8)).pack(side='right', padx=5)
+        tk.Button(title_bar, text="✕", command=root.quit, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8), padx=10, activebackground='#cc3333').pack(side='right')
 
-        self.refresh_btn = tk.Button(root, text="REFRESH DEVICES", command=self.refresh_ui, 
-                                     bg='#121212', fg='#1e88e5', relief='flat', font=('Sans', 8, 'bold'))
+        self.refresh_btn = tk.Button(root, text="REFRESH DEVICES", command=self.refresh_ui, bg='#121212', fg='#1e88e5', relief='flat', font=('Sans', 8, 'bold'))
         self.refresh_btn.pack(pady=5, padx=15, fill='x')
 
         self.button_frame = tk.Frame(root, bg='#121212')
@@ -58,34 +51,28 @@ class AudioSwitcher:
             if os.path.exists(self.config_path):
                 with open(self.config_path, 'r') as f:
                     data = json.load(f)
-                    return {
-                        "nicknames": data.get("nicknames", {}),
-                        "hidden": data.get("hidden", [])
-                    }
-        except Exception as e:
-            print(f"Load Error: {e}")
+                    return {"nicknames": data.get("nicknames", {}), "hidden": data.get("hidden", [])}
+        except: pass
         return {"nicknames": {}, "hidden": []}
 
     def save_config(self):
         try:
-            # Atomic Save: Write to file and force sync to disk
             with open(self.config_path, 'w') as f:
                 json.dump(self.config, f, indent=4)
                 f.flush()
                 os.fsync(f.fileno()) 
-        except Exception as e:
-            messagebox.showerror("Save Error", f"Could not save nicknames: {e}")
+        except: pass
 
-    def rename_device(self, dev_id):
+    def rename_device(self, hardware_name):
         new_name = simpledialog.askstring("Nickname", f"Rename Device:", parent=self.root)
-        if new_name is not None: # Allow empty string to reset, but check for Cancel
-            self.config["nicknames"][dev_id] = new_name
+        if new_name is not None:
+            self.config["nicknames"][hardware_name] = new_name
             self.save_config()
             self.refresh_ui()
 
-    def hide_device(self, dev_id):
-        if dev_id not in self.config["hidden"]:
-            self.config["hidden"].append(dev_id)
+    def hide_device(self, hardware_name):
+        if hardware_name not in self.config["hidden"]:
+            self.config["hidden"].append(hardware_name)
             self.save_config()
             self.refresh_ui()
 
@@ -95,12 +82,11 @@ class AudioSwitcher:
         self.refresh_ui()
         messagebox.showinfo("Settings", "All devices restored!", parent=self.root)
 
-    def show_menu(self, event, dev_id):
-        if self.active_menu:
-            self.active_menu.destroy()
+    def show_menu(self, event, hardware_name):
+        if self.active_menu: self.active_menu.destroy()
         self.active_menu = tk.Menu(self.root, tearoff=0, bg='#1e1e1e', fg='white', activebackground='#1e88e5')
-        self.active_menu.add_command(label="Rename", command=lambda: self.rename_device(dev_id))
-        self.active_menu.add_command(label="Hide", command=lambda: self.hide_device(dev_id))
+        self.active_menu.add_command(label="Rename", command=lambda: self.rename_device(hardware_name))
+        self.active_menu.add_command(label="Hide", command=lambda: self.hide_device(hardware_name))
         self.active_menu.post(event.x_root, event.y_root)
 
     def get_audio_sinks(self):
@@ -116,9 +102,9 @@ class AudioSwitcher:
                         if match:
                             raw_id = match.group(1)
                             raw_name = re.split(r'\[', match.group(2))[0].strip()
-                            if raw_id not in self.config["hidden"]:
-                                name = self.config["nicknames"].get(raw_id, raw_name)
-                                sinks.append({"id": raw_id, "name": name, "active": "*" in line})
+                            if raw_name not in self.config["hidden"]:
+                                name = self.config["nicknames"].get(raw_name, raw_name)
+                                sinks.append({"id": raw_id, "name": name, "h_name": raw_name, "active": "*" in line})
             
             elif platform.system() == "Windows":
                 cmd = 'powershell -Command "Get-CimInstance Win32_SoundDevice | Select-Object -ExpandProperty Name"'
@@ -127,14 +113,13 @@ class AudioSwitcher:
                     name = line.strip()
                     if name and name not in self.config["hidden"]:
                         display_name = self.config["nicknames"].get(name, name)
-                        sinks.append({"id": name, "name": display_name, "active": False})
+                        sinks.append({"id": name, "name": display_name, "h_name": name, "active": False})
         except: pass
         return sinks
 
     def refresh_ui(self):
         devices = self.get_audio_sinks()
         for widget in self.button_frame.winfo_children(): widget.destroy()
-        
         for dev in devices:
             is_active = dev.get('active', False) or (dev['id'] == self.active_device_id)
             bg_color = '#1e88e5' if is_active else '#121212'
@@ -142,7 +127,7 @@ class AudioSwitcher:
                             command=lambda d=dev['id']: self.switch_audio(d),
                             bg=bg_color, fg='white', relief='flat', anchor='w', padx=10, font=('Sans', 9))
             btn.pack(fill='x', padx=10, pady=2)
-            btn.bind("<Button-3>", lambda e, d=dev['id']: self.show_menu(e, d))
+            btn.bind("<Button-3>", lambda e, n=dev['h_name']: self.show_menu(e, n))
 
     def switch_audio(self, device_id):
         self.active_device_id = device_id
@@ -157,8 +142,7 @@ class AudioSwitcher:
 
     def start_move(self, event):
         if self.active_menu: self.active_menu.destroy()
-        self.x = event.x
-        self.y = event.y
+        self.x = event.x; self.y = event.y
 
     def do_move(self, event):
         x = self.root.winfo_x() + (event.x - self.x)

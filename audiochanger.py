@@ -6,26 +6,27 @@ class AudioSwitcher:
     def __init__(self, root):
         self.root = root
         self.root.title("Audio Switcher")
-        
-        # --- POSITION & SIZE ---
-        # 300x300 is size, +15+15 snaps it to top-left corner
-        self.root.geometry("300x300+15+15") 
+        self.root.geometry("300x200+15+15") 
         self.root.configure(bg='#121212', highlightbackground='#1e88e5', highlightthickness=1)
         
-        # --- CROSS-PLATFORM STORAGE & BORDERLESS FIX ---
+        # --- ROBUST STORAGE PATHS ---
         if platform.system() == "Windows":
-            self.config_path = os.path.join(os.environ.get('APPDATA', '.'), 'AudioSwitcher_Config.json')
+            self.config_dir = os.environ.get('APPDATA', '.')
+            self.config_path = os.path.join(self.config_dir, 'AudioSwitcher_Config.json')
             import ctypes
             try: ctypes.windll.shcore.SetProcessDpiAwareness(1)
             except: pass
-            # Windows borderless
             self.root.overrideredirect(True)
         else:
-            # Linux (Pop!_OS) path
-            self.config_path = os.path.expanduser('~/.audio_switcher_config.json')
-            # Linux borderless fix: Removes the outer gray bar (GNOME title bar)
+            # Linux Standard: Save in a hidden folder in Home
+            self.config_dir = os.path.expanduser('~')
+            self.config_path = os.path.join(self.config_dir, '.audio_switcher_config.json')
             self.root.attributes('-type', 'splash') 
             
+        # Ensure the directory exists before doing anything
+        if not os.path.exists(self.config_dir):
+            os.makedirs(self.config_dir, exist_ok=True)
+
         self.config = self.load_config()
         self.root.bind("<Button-1>", self.start_move)
         self.root.bind("<B1-Motion>", self.do_move)
@@ -33,20 +34,16 @@ class AudioSwitcher:
         self.active_menu = None
         self.active_device_id = None
 
-        # --- CUSTOM TITLE BAR ---
         title_bar = tk.Frame(root, bg='#1e1e1e', bd=0)
         title_bar.pack(fill='x')
         tk.Label(title_bar, text="  AUDIO v1.0.2", bg='#1e1e1e', fg='#666666', font=('Sans', 7, 'bold')).pack(side='left', pady=4)
         
-        # Settings Gear (Unhide All)
         tk.Button(title_bar, text="⚙", command=self.unhide_all, bg='#1e1e1e', fg='#666666', 
                   relief='flat', font=('Sans', 8)).pack(side='right', padx=5)
         
-        # Close Button
         tk.Button(title_bar, text="✕", command=root.quit, bg='#1e1e1e', fg='#666666', 
                   relief='flat', font=('Sans', 8), padx=10, activebackground='#cc3333').pack(side='right')
 
-        # --- REFRESH BUTTON ---
         self.refresh_btn = tk.Button(root, text="REFRESH DEVICES", command=self.refresh_ui, 
                                      bg='#121212', fg='#1e88e5', relief='flat', font=('Sans', 8, 'bold'))
         self.refresh_btn.pack(pady=5, padx=15, fill='x')
@@ -61,18 +58,27 @@ class AudioSwitcher:
             if os.path.exists(self.config_path):
                 with open(self.config_path, 'r') as f:
                     data = json.load(f)
-                    if "nicknames" not in data: data["nicknames"] = {}
-                    if "hidden" not in data: data["hidden"] = []
-                    return data
-        except: pass
+                    return {
+                        "nicknames": data.get("nicknames", {}),
+                        "hidden": data.get("hidden", [])
+                    }
+        except Exception as e:
+            print(f"Load Error: {e}")
         return {"nicknames": {}, "hidden": []}
 
     def save_config(self):
-        with open(self.config_path, 'w') as f: json.dump(self.config, f)
+        try:
+            # Atomic Save: Write to file and force sync to disk
+            with open(self.config_path, 'w') as f:
+                json.dump(self.config, f, indent=4)
+                f.flush()
+                os.fsync(f.fileno()) 
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Could not save nicknames: {e}")
 
     def rename_device(self, dev_id):
         new_name = simpledialog.askstring("Nickname", f"Rename Device:", parent=self.root)
-        if new_name:
+        if new_name is not None: # Allow empty string to reset, but check for Cancel
             self.config["nicknames"][dev_id] = new_name
             self.save_config()
             self.refresh_ui()
@@ -136,7 +142,6 @@ class AudioSwitcher:
                             command=lambda d=dev['id']: self.switch_audio(d),
                             bg=bg_color, fg='white', relief='flat', anchor='w', padx=10, font=('Sans', 9))
             btn.pack(fill='x', padx=10, pady=2)
-            # Right Click to open Rename/Hide menu
             btn.bind("<Button-3>", lambda e, d=dev['id']: self.show_menu(e, d))
 
     def switch_audio(self, device_id):

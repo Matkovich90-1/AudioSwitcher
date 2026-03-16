@@ -1,13 +1,17 @@
 name: Build Cross-Platform Audio Switcher
 on: [push]
 
+# Force the runner to use Node 24 for all actions to clear deprecation warnings
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   # --- WINDOWS BUILD ---
   build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6 # Updated to v6 for Node 24 support
         with:
           python-version: '3.11'
       - name: Build EXE
@@ -29,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6 # Updated to v6 for Node 24 support
         with:
           python-version: '3.11'
       - name: Install Tools

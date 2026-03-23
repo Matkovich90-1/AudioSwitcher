@@ -33,7 +33,7 @@ class AudioSwitcher:
         # Title Bar
         title_bar = tk.Frame(root, bg='#1e1e1e', bd=0)
         title_bar.pack(fill='x')
-        tk.Label(title_bar, text="  AUDIO v1.1.0", bg='#1e1e1e', fg='#666666', font=('Sans', 7, 'bold')).pack(side='left', pady=4)
+        tk.Label(title_bar, text="  AUDIO SWITCHER v1.0.3", bg='#1e1e1e', fg='#666666', font=('Sans', 7, 'bold')).pack(side='left', pady=4)
         
         tk.Button(title_bar, text="⚙", command=self.unhide_all, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8)).pack(side='right', padx=5)
         tk.Button(title_bar, text="✕", command=root.quit, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8), padx=10, activebackground='#cc3333').pack(side='right')

@@ -1,7 +1,6 @@
 name: Build Cross-Platform Audio Switcher
 on: [push]
 
-# Force the runner to use Node 24 for all actions
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
@@ -10,7 +9,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4.2.2 # Explicitly use latest v4 patch
+      - uses: actions/checkout@v4.2.2 # Check for v5 if available
       - uses: actions/setup-python@v6 
         with:
           python-version: '3.11'
@@ -18,12 +17,15 @@ jobs:
         run: |
           pip install pyinstaller
           pyinstaller --onefile --noconsole --icon="app_icon.ico" --add-data "nircmd.exe;." --add-data "app_icon.ico;." audiochanger.py
+      
+      # Switched to a more frequently updated Inno Setup action
       - name: Create Installer
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+        uses: jack-of-all-trades/inno-setup-action@v1.0.0
         with:
           path: installer.iss
+
       - name: Upload Windows
-        uses: actions/upload-artifact@v4.6.0 # Explicitly use latest v4 patch
+        uses: actions/upload-artifact@v6 # Upgrade to v6 for native Node 24 support
         with:
           name: Audio-Switcher-Windows
           path: dist/AudioSwitcherInstaller.exe
@@ -44,7 +46,7 @@ jobs:
       - name: Build Binary
         run: pyinstaller --onefile --noconsole audiochanger.py
       - name: Upload Linux Binary
-        uses: actions/upload-artifact@v4.6.0
+        uses: actions/upload-artifact@v6 # Upgrade to v6 for native Node 24 support
         with:
           name: Audio-Switcher-Linux
           path: dist/audiochanger

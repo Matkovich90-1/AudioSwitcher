@@ -1,7 +1,7 @@
 name: Build Cross-Platform Audio Switcher
 on: [push]
 
-# Force the runner to use Node 24 for all actions to clear deprecation warnings
+# Force the runner to use Node 24 for all actions
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
@@ -10,8 +10,8 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v6 # Updated to v6 for Node 24 support
+      - uses: actions/checkout@v4.2.2 # Explicitly use latest v4 patch
+      - uses: actions/setup-python@v6 
         with:
           python-version: '3.11'
       - name: Build EXE
@@ -23,7 +23,7 @@ jobs:
         with:
           path: installer.iss
       - name: Upload Windows
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.0 # Explicitly use latest v4 patch
         with:
           name: Audio-Switcher-Windows
           path: dist/AudioSwitcherInstaller.exe
@@ -32,8 +32,8 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v6 # Updated to v6 for Node 24 support
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-python@v6 
         with:
           python-version: '3.11'
       - name: Install Tools
@@ -44,7 +44,7 @@ jobs:
       - name: Build Binary
         run: pyinstaller --onefile --noconsole audiochanger.py
       - name: Upload Linux Binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.0
         with:
           name: Audio-Switcher-Linux
           path: dist/audiochanger

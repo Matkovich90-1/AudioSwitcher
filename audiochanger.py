@@ -8,9 +8,9 @@ class AudioSwitcher:
         self.root.title("Audio Switcher")
         self.mini_mode = False
         
-        # --- POSITION & SIZE (Adjusted for Linux WM padding) ---
+        # --- POSITION & SIZE ---
         self.main_geo = "320x300+15+15"
-        self.mini_geo = "420x95+15+15" 
+        self.mini_geo = "420x95+15+15" # Height adjusted for Linux/Windows scaling
         self.root.geometry(self.main_geo) 
         self.root.configure(bg='#121212', highlightbackground='#1e88e5', highlightthickness=1)
         
@@ -22,7 +22,6 @@ class AudioSwitcher:
             self.root.overrideredirect(True)
         else:
             self.config_path = os.path.expanduser('~/.audio_switcher_config.json')
-            # Using splash type to remove title bar on Linux
             self.root.attributes('-type', 'splash') 
             
         self.config = self.load_config()
@@ -98,11 +97,9 @@ class AudioSwitcher:
             if platform.system() == "Linux":
                 result = subprocess.run(["wpctl", "status"], capture_output=True, text=True)
                 stdout = result.stdout
-                # Find the 'Audio' section first
                 audio_start = stdout.find("Audio")
                 if audio_start == -1: return []
                 audio_section = stdout[audio_start:]
-                # Isolate Sinks or Sources block
                 pattern = rf"{dev_type}:(.*?)(?:\n\s*├─|\n\s*└─|\Z)"
                 match_section = re.search(pattern, audio_section, re.DOTALL)
                 if match_section:
@@ -114,6 +111,24 @@ class AudioSwitcher:
                             if rname not in self.config["hidden"]:
                                 name = self.config["nicknames"].get(rname, rname)
                                 devices.append({"id": rid, "name": name, "h_name": rname, "active": "*" in line})
+            
+            elif platform.system() == "Windows":
+                if dev_type == "Sinks":
+                    cmd = 'powershell -NoProfile -Command "Get-CimInstance Win32_SoundDevice | Select-Object -ExpandProperty Name"'
+                else:
+                    cmd = 'powershell -NoProfile -Command "Get-PnpDevice -Class AudioEndpoint -Status OK | Select-Object -ExpandProperty FriendlyName"'
+                
+                proc = subprocess.run(cmd, capture_output=True, shell=True, creationflags=0x08000000)
+                try:
+                    raw_output = proc.stdout.decode('utf-8')
+                except UnicodeDecodeError:
+                    raw_output = proc.stdout.decode('cp1252', errors='replace')
+
+                for line in raw_output.splitlines():
+                    rname = line.strip()
+                    if rname and rname not in self.config["hidden"]:
+                        display_name = self.config["nicknames"].get(rname, rname)
+                        devices.append({"id": rname, "name": display_name, "h_name": rname, "active": False})
         except: pass
         return devices
 
@@ -131,7 +146,7 @@ class AudioSwitcher:
             tk.Label(s_row, text="S:", bg='#121212', fg='#1e88e5', font=('Sans', 7, 'bold'), width=2).pack(side='left')
             for dev in sinks:
                 bg = '#1e88e5' if dev['active'] else '#1e1e1e'
-                tk.Button(s_row, text=dev['name'][:8], command=lambda d=dev['id']: self.switch_audio(d),
+                tk.Button(s_row, text=dev['name'][:8], command=lambda d=dev['id']: self.switch_audio(d, False),
                           bg=bg, fg='white', relief='flat', font=('Sans', 7), padx=4).pack(side='left', padx=2)
 
             # Row 2: Microphones (M)
@@ -140,26 +155,31 @@ class AudioSwitcher:
             tk.Label(m_row, text="M:", bg='#121212', fg='#1e88e5', font=('Sans', 7, 'bold'), width=2).pack(side='left')
             for dev in sources:
                 bg = '#1e88e5' if dev['active'] else '#1e1e1e'
-                tk.Button(m_row, text=dev['name'][:8], command=lambda d=dev['id']: self.switch_audio(d),
+                tk.Button(m_row, text=dev['name'][:8], command=lambda d=dev['id']: self.switch_audio(d, True),
                           bg=bg, fg='white', relief='flat', font=('Sans', 7), padx=4).pack(side='left', padx=2)
         else:
             tk.Label(self.button_frame, text="SPEAKERS", bg='#121212', fg='#666666', font=('Sans', 7, 'bold')).pack(fill='x', padx=10, pady=(10,2))
-            self.create_buttons(sinks)
+            self.create_buttons(sinks, False)
             tk.Label(self.button_frame, text="MICROPHONES", bg='#121212', fg='#666666', font=('Sans', 7, 'bold')).pack(fill='x', padx=10, pady=(15,2))
-            self.create_buttons(sources)
+            self.create_buttons(sources, True)
 
-    def create_buttons(self, devices):
+    def create_buttons(self, devices, is_mic):
         for dev in devices:
             bg = '#1e88e5' if dev['active'] else '#1e1e1e'
             btn = tk.Button(self.button_frame, text=f"  {dev['name']}", 
-                            command=lambda d=dev['id']: self.switch_audio(d),
+                            command=lambda d=dev['id'], m=is_mic: self.switch_audio(d, m),
                             bg=bg, fg='white', relief='flat', anchor='w', padx=10, font=('Sans', 9))
             btn.pack(fill='x', padx=10, pady=2)
 
-    def switch_audio(self, device_id):
-        # Native wpctl command to set default device
+    def switch_audio(self, device_id, is_mic):
         if platform.system() == "Linux":
             subprocess.run(["wpctl", "set-default", str(device_id)])
+        elif platform.system() == "Windows":
+            base_path = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.abspath(".")
+            nircmd_path = os.path.join(base_path, "nircmd.exe")
+            role = "1" if not is_mic else "2" # 1 for Playback, 2 for Recording in NirCmd context
+            subprocess.run([nircmd_path, "setdefaultsounddevice", device_id, "1"], creationflags=0x08000000)
+            subprocess.run([nircmd_path, "setdefaultsounddevice", device_id, "2"], creationflags=0x08000000)
         self.refresh_ui()
 
     def start_move(self, event):

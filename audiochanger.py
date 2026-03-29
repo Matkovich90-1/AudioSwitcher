@@ -1,4 +1,4 @@
-import tk as tk
+import tkinter as tk
 from tkinter import simpledialog, messagebox
 import subprocess, re, platform, os, sys, json
 
@@ -121,25 +121,24 @@ class AudioSwitcher:
                       bg='#1e1e1e', fg='#1e88e5', relief='flat', font=('Sans', 10), width=3).pack(side='left', padx=(5,2), pady=5)
 
         for dev in devices:
-            # FIX: Bind the ID immediately to the lambda to avoid 'Late Binding' bug
             d_id = dev['id']
-            h_name = dev['h_name']
+            h_n = dev['h_name']
             is_active = dev.get('active', False) or (d_id == self.active_device_id)
             bg_color = '#1e88e5' if is_active else '#1e1e1e'
             
             if self.mini_mode:
                 btn = tk.Button(self.button_frame, text=dev['name'][:12], 
-                                command=lambda id_val=d_id: self.switch_audio(id_val),
+                                command=lambda val=d_id: self.switch_audio(val),
                                 bg=bg_color, fg='white', relief='flat', font=('Sans', 8), width=12)
                 btn.pack(side='left', padx=2, pady=5)
             else:
                 btn = tk.Button(self.button_frame, text=f"  {dev['name']}", 
-                                command=lambda id_val=d_id: self.switch_audio(id_val),
+                                command=lambda val=d_id: self.switch_audio(val),
                                 bg=bg_color if is_active else '#121212', fg='white', relief='flat', 
                                 anchor='w', padx=10, font=('Sans', 9))
                 btn.pack(fill='x', padx=10, pady=2)
             
-            btn.bind("<Button-3>", lambda e, n=h_name: self.show_menu(e, n))
+            btn.bind("<Button-3>", lambda e, n=h_n: self.show_menu(e, n))
 
     def switch_audio(self, device_id):
         self.active_device_id = device_id
@@ -165,10 +164,11 @@ class AudioSwitcher:
     def rename_device(self, hardware_name):
         new_name = simpledialog.askstring("Nickname", f"Rename Device:", parent=self.root)
         if new_name:
-            self.config["nicknames"][hardware_name] = new_name
+            self.config.setdefault("nicknames", {})[hardware_name] = new_name
             self.save_config(); self.refresh_ui()
 
     def hide_device(self, hardware_name):
+        self.config.setdefault("hidden", [])
         if hardware_name not in self.config["hidden"]:
             self.config["hidden"].append(hardware_name)
             self.save_config(); self.refresh_ui()

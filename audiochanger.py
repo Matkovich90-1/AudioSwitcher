@@ -1,4 +1,4 @@
-import tkinter as tk
+import tk as tk
 from tkinter import simpledialog, messagebox
 import subprocess, re, platform, os, sys, json
 
@@ -35,7 +35,6 @@ class AudioSwitcher:
         tk.Label(self.title_bar, text="  AUDIO v1.0.2", bg='#1e1e1e', fg='#666666', font=('Sans', 7, 'bold')).pack(side='left', pady=4)
         
         tk.Button(self.title_bar, text="✕", command=root.quit, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8), padx=10, activebackground='#cc3333').pack(side='right')
-        # Mini Mode Toggle Button (Square Icon)
         self.mini_btn = tk.Button(self.title_bar, text="⬜", command=self.toggle_mini, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8))
         self.mini_btn.pack(side='right', padx=5)
         tk.Button(self.title_bar, text="⚙", command=self.unhide_all, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8)).pack(side='right', padx=5)
@@ -46,12 +45,10 @@ class AudioSwitcher:
         self.button_frame = tk.Frame(root, bg='#121212')
         self.button_frame.pack(fill='both', expand=True)
 
-        # Set initial main mode constraints
         self.set_window_constraints(300, 200)
         self.refresh_ui()
 
     def set_window_constraints(self, w, h):
-        """Helper to break and reset min/max locks"""
         self.root.minsize(0, 0)
         self.root.maxsize(3000, 3000)
         self.root.geometry(f"{w}x{h}")
@@ -61,32 +58,25 @@ class AudioSwitcher:
 
     def toggle_mini(self):
         self.mini_mode = not self.mini_mode
-        
         if self.mini_mode:
-            # MINI MODE: Horizontal, Always on Top, Slim
             self.root.attributes('-topmost', True)
             self.refresh_btn.pack_forget()
             self.title_bar.pack_forget()
-            
             devices = self.get_audio_sinks()
-            # Calculate width: ~100px per device + 40px for the back button
             new_width = max(150, (len(devices) * 105) + 45)
             self.set_window_constraints(new_width, 45)
         else:
-            # MAIN MODE: Vertical, Normal depth
             self.root.attributes('-topmost', False)
             self.title_bar.pack(fill='x', before=self.button_frame)
             self.refresh_btn.pack(pady=5, padx=15, fill='x', after=self.title_bar)
             self.set_window_constraints(300, 200)
-        
         self.refresh_ui()
 
     def load_config(self):
         try:
             if os.path.exists(self.config_path):
                 with open(self.config_path, 'r') as f:
-                    data = json.load(f)
-                    return {"nicknames": data.get("nicknames", {}), "hidden": data.get("hidden", [])}
+                    return json.load(f)
         except: pass
         return {"nicknames": {}, "hidden": []}
 
@@ -95,32 +85,6 @@ class AudioSwitcher:
             with open(self.config_path, 'w') as f:
                 json.dump(self.config, f, indent=4)
         except: pass
-
-    def rename_device(self, hardware_name):
-        new_name = simpledialog.askstring("Nickname", f"Rename Device:", parent=self.root)
-        if new_name:
-            self.config["nicknames"][hardware_name] = new_name
-            self.save_config()
-            self.refresh_ui()
-
-    def hide_device(self, hardware_name):
-        if hardware_name not in self.config["hidden"]:
-            self.config["hidden"].append(hardware_name)
-            self.save_config()
-            self.refresh_ui()
-
-    def unhide_all(self):
-        self.config["hidden"] = []
-        self.save_config()
-        self.refresh_ui()
-        messagebox.showinfo("Settings", "All devices restored!", parent=self.root)
-
-    def show_menu(self, event, hardware_name):
-        if self.active_menu: self.active_menu.destroy()
-        self.active_menu = tk.Menu(self.root, tearoff=0, bg='#1e1e1e', fg='white', activebackground='#1e88e5')
-        self.active_menu.add_command(label="Rename", command=lambda: self.rename_device(hardware_name))
-        self.active_menu.add_command(label="Hide", command=lambda: self.hide_device(hardware_name))
-        self.active_menu.post(event.x_root, event.y_root)
 
     def get_audio_sinks(self):
         sinks = []
@@ -133,18 +97,17 @@ class AudioSwitcher:
                         match = re.search(r'(\d+)\.\s+(.*)', line)
                         if match:
                             raw_id = match.group(1)
-                            raw_name = re.split(r'\[', match.group(2))[0].strip()
-                            if raw_name not in self.config["hidden"]:
-                                name = self.config["nicknames"].get(raw_name, raw_name)
+                            raw_name = match.group(2).split('[')[0].strip()
+                            if raw_name not in self.config.get("hidden", []):
+                                name = self.config.get("nicknames", {}).get(raw_name, raw_name)
                                 sinks.append({"id": raw_id, "name": name, "h_name": raw_name, "active": "*" in line})
-            
             elif platform.system() == "Windows":
                 cmd = 'powershell -Command "Get-CimInstance Win32_SoundDevice | Select-Object -ExpandProperty Name"'
                 proc = subprocess.run(cmd, capture_output=True, text=True, shell=True, creationflags=0x08000000)
                 for line in proc.stdout.splitlines():
                     name = line.strip()
-                    if name and name not in self.config["hidden"]:
-                        display_name = self.config["nicknames"].get(name, name)
+                    if name and name not in self.config.get("hidden", []):
+                        display_name = self.config.get("nicknames", {}).get(name, name)
                         sinks.append({"id": name, "name": display_name, "h_name": name, "active": False})
         except: pass
         return sinks
@@ -154,29 +117,29 @@ class AudioSwitcher:
         for widget in self.button_frame.winfo_children(): widget.destroy()
         
         if self.mini_mode:
-            # Back to Main button in Mini Mode
             tk.Button(self.button_frame, text="🔙", command=self.toggle_mini, 
                       bg='#1e1e1e', fg='#1e88e5', relief='flat', font=('Sans', 10), width=3).pack(side='left', padx=(5,2), pady=5)
 
         for dev in devices:
-            is_active = dev.get('active', False) or (dev['id'] == self.active_device_id)
+            # FIX: Bind the ID immediately to the lambda to avoid 'Late Binding' bug
+            d_id = dev['id']
+            h_name = dev['h_name']
+            is_active = dev.get('active', False) or (d_id == self.active_device_id)
             bg_color = '#1e88e5' if is_active else '#1e1e1e'
             
             if self.mini_mode:
-                # Slim horizontal buttons
                 btn = tk.Button(self.button_frame, text=dev['name'][:12], 
-                                command=lambda d=dev['id']: self.switch_audio(d),
+                                command=lambda id_val=d_id: self.switch_audio(id_val),
                                 bg=bg_color, fg='white', relief='flat', font=('Sans', 8), width=12)
                 btn.pack(side='left', padx=2, pady=5)
             else:
-                # Standard vertical buttons
                 btn = tk.Button(self.button_frame, text=f"  {dev['name']}", 
-                                command=lambda d=dev['id']: self.switch_audio(d),
+                                command=lambda id_val=d_id: self.switch_audio(id_val),
                                 bg=bg_color if is_active else '#121212', fg='white', relief='flat', 
                                 anchor='w', padx=10, font=('Sans', 9))
                 btn.pack(fill='x', padx=10, pady=2)
             
-            btn.bind("<Button-3>", lambda e, n=dev['h_name']: self.show_menu(e, n))
+            btn.bind("<Button-3>", lambda e, n=h_name: self.show_menu(e, n))
 
     def switch_audio(self, device_id):
         self.active_device_id = device_id
@@ -199,8 +162,30 @@ class AudioSwitcher:
         y = self.root.winfo_y() + (event.y - self.y)
         self.root.geometry(f"+{x}+{y}")
 
+    def rename_device(self, hardware_name):
+        new_name = simpledialog.askstring("Nickname", f"Rename Device:", parent=self.root)
+        if new_name:
+            self.config["nicknames"][hardware_name] = new_name
+            self.save_config(); self.refresh_ui()
+
+    def hide_device(self, hardware_name):
+        if hardware_name not in self.config["hidden"]:
+            self.config["hidden"].append(hardware_name)
+            self.save_config(); self.refresh_ui()
+
+    def unhide_all(self):
+        self.config["hidden"] = []
+        self.save_config(); self.refresh_ui()
+        messagebox.showinfo("Settings", "All devices restored!", parent=self.root)
+
+    def show_menu(self, event, hardware_name):
+        if self.active_menu: self.active_menu.destroy()
+        self.active_menu = tk.Menu(self.root, tearoff=0, bg='#1e1e1e', fg='white', activebackground='#1e88e5')
+        self.active_menu.add_command(label="Rename", command=lambda: self.rename_device(hardware_name))
+        self.active_menu.add_command(label="Hide", command=lambda: self.hide_device(hardware_name))
+        self.active_menu.post(event.x_root, event.y_root)
+
 if __name__ == "__main__":
     root = tk.Tk()
     app = AudioSwitcher(root)
     root.mainloop()
-

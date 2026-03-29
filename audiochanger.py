@@ -6,12 +6,13 @@ class AudioSwitcher:
     def __init__(self, root):
         self.root = root
         self.root.title("Audio Switcher")
-        self.mini_mode = False
         
-        # --- POSITION & SIZE ---
-        self.main_geo = "320x300+15+15"
-        self.mini_geo = "420x95+15+15" # Height adjusted for Linux/Windows scaling
-        self.root.geometry(self.main_geo) 
+        self.mini_mode = False
+        self.active_menu = None
+        self.active_device_id = None
+        
+        # --- INITIAL CONFIG & POSITION ---
+        self.root.geometry("300x200+15+15") 
         self.root.configure(bg='#121212', highlightbackground='#1e88e5', highlightthickness=1)
         
         if platform.system() == "Windows":
@@ -28,58 +29,56 @@ class AudioSwitcher:
         self.root.bind("<Button-1>", self.start_move)
         self.root.bind("<B1-Motion>", self.do_move)
 
-        # --- UI LAYOUT ---
+        # UI ELEMENTS
         self.title_bar = tk.Frame(root, bg='#1e1e1e', bd=0)
         self.title_bar.pack(fill='x')
+        tk.Label(self.title_bar, text="  AUDIO v1.0.2", bg='#1e1e1e', fg='#666666', font=('Sans', 7, 'bold')).pack(side='left', pady=4)
         
-        self.ver_label = tk.Label(self.title_bar, text="  AUDIO v1.0.3", bg='#1e1e1e', fg='#666666', font=('Sans', 7, 'bold'))
-        self.ver_label.pack(side='left', pady=4)
-        
-        self.exit_btn = tk.Button(self.title_bar, text="✕", command=root.quit, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8), padx=10, activebackground='#cc3333')
-        self.exit_btn.pack(side='right')
-        
-        self.mini_btn = tk.Button(self.title_bar, text="▢", command=self.toggle_mini, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8))
+        tk.Button(self.title_bar, text="✕", command=root.quit, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8), padx=10, activebackground='#cc3333').pack(side='right')
+        # Mini Mode Toggle Button (Square Icon)
+        self.mini_btn = tk.Button(self.title_bar, text="⬜", command=self.toggle_mini, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8))
         self.mini_btn.pack(side='right', padx=5)
+        tk.Button(self.title_bar, text="⚙", command=self.unhide_all, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8)).pack(side='right', padx=5)
 
-        self.refresh_btn = tk.Button(root, text="REFRESH", command=self.refresh_ui, bg='#121212', fg='#1e88e5', relief='flat', font=('Sans', 8, 'bold'))
+        self.refresh_btn = tk.Button(root, text="REFRESH DEVICES", command=self.refresh_ui, bg='#121212', fg='#1e88e5', relief='flat', font=('Sans', 8, 'bold'))
         self.refresh_btn.pack(pady=5, padx=15, fill='x')
 
-        self.mini_container = tk.Frame(root, bg='#121212')
-        self.main_container = tk.Frame(root, bg='#121212')
-        self.main_container.pack(fill='both', expand=True)
-        
-        self.canvas = tk.Canvas(self.main_container, bg='#121212', highlightthickness=0)
-        self.scrollbar = tk.Scrollbar(self.main_container, orient="vertical", command=self.canvas.yview)
-        self.button_frame = tk.Frame(self.canvas, bg='#121212')
+        self.button_frame = tk.Frame(root, bg='#121212')
+        self.button_frame.pack(fill='both', expand=True)
 
-        self.button_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.create_window((0, 0), window=self.button_frame, anchor="nw", width=310)
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
-
+        # Set initial main mode constraints
+        self.set_window_constraints(300, 200)
         self.refresh_ui()
+
+    def set_window_constraints(self, w, h):
+        """Helper to break and reset min/max locks"""
+        self.root.minsize(0, 0)
+        self.root.maxsize(3000, 3000)
+        self.root.geometry(f"{w}x{h}")
+        self.root.update_idletasks()
+        self.root.minsize(w, h)
+        self.root.maxsize(w, h)
 
     def toggle_mini(self):
         self.mini_mode = not self.mini_mode
+        
         if self.mini_mode:
-            self.root.geometry(self.mini_geo)
-            self.root.attributes("-topmost", True)
+            # MINI MODE: Horizontal, Always on Top, Slim
+            self.root.attributes('-topmost', True)
             self.refresh_btn.pack_forget()
-            self.main_container.pack_forget()
-            self.exit_btn.pack_forget()
-            self.mini_container.pack(fill='both', expand=True, padx=10, pady=5)
-            self.ver_label.config(text="  MINI")
-            self.mini_btn.config(text="▲")
+            self.title_bar.pack_forget()
+            
+            devices = self.get_audio_sinks()
+            # Calculate width: ~100px per device + 40px for the back button
+            new_width = max(150, (len(devices) * 105) + 45)
+            self.set_window_constraints(new_width, 45)
         else:
-            self.root.geometry(self.main_geo)
-            self.root.attributes("-topmost", False)
-            self.mini_container.pack_forget()
-            self.refresh_btn.pack(pady=5, padx=15, fill='x')
-            self.main_container.pack(fill='both', expand=True)
-            self.exit_btn.pack(side='right')
-            self.ver_label.config(text="  AUDIO v1.0.3")
-            self.mini_btn.config(text="▢")
+            # MAIN MODE: Vertical, Normal depth
+            self.root.attributes('-topmost', False)
+            self.title_bar.pack(fill='x', before=self.button_frame)
+            self.refresh_btn.pack(pady=5, padx=15, fill='x', after=self.title_bar)
+            self.set_window_constraints(300, 200)
+        
         self.refresh_ui()
 
     def load_config(self):
@@ -91,102 +90,113 @@ class AudioSwitcher:
         except: pass
         return {"nicknames": {}, "hidden": []}
 
-    def get_audio_devices(self, dev_type="Sinks"):
-        devices = []
+    def save_config(self):
+        try:
+            with open(self.config_path, 'w') as f:
+                json.dump(self.config, f, indent=4)
+        except: pass
+
+    def rename_device(self, hardware_name):
+        new_name = simpledialog.askstring("Nickname", f"Rename Device:", parent=self.root)
+        if new_name:
+            self.config["nicknames"][hardware_name] = new_name
+            self.save_config()
+            self.refresh_ui()
+
+    def hide_device(self, hardware_name):
+        if hardware_name not in self.config["hidden"]:
+            self.config["hidden"].append(hardware_name)
+            self.save_config()
+            self.refresh_ui()
+
+    def unhide_all(self):
+        self.config["hidden"] = []
+        self.save_config()
+        self.refresh_ui()
+        messagebox.showinfo("Settings", "All devices restored!", parent=self.root)
+
+    def show_menu(self, event, hardware_name):
+        if self.active_menu: self.active_menu.destroy()
+        self.active_menu = tk.Menu(self.root, tearoff=0, bg='#1e1e1e', fg='white', activebackground='#1e88e5')
+        self.active_menu.add_command(label="Rename", command=lambda: self.rename_device(hardware_name))
+        self.active_menu.add_command(label="Hide", command=lambda: self.hide_device(hardware_name))
+        self.active_menu.post(event.x_root, event.y_root)
+
+    def get_audio_sinks(self):
+        sinks = []
         try:
             if platform.system() == "Linux":
                 result = subprocess.run(["wpctl", "status"], capture_output=True, text=True)
-                stdout = result.stdout
-                audio_start = stdout.find("Audio")
-                if audio_start == -1: return []
-                audio_section = stdout[audio_start:]
-                pattern = rf"{dev_type}:(.*?)(?:\n\s*├─|\n\s*└─|\Z)"
-                match_section = re.search(pattern, audio_section, re.DOTALL)
-                if match_section:
-                    for line in match_section.group(1).splitlines():
+                if "Sinks:" in result.stdout:
+                    s_section = result.stdout.split("Sinks:")[1].split("Sink endpoints:")[0]
+                    for line in s_section.split('\n'):
                         match = re.search(r'(\d+)\.\s+(.*)', line)
                         if match:
-                            rid = match.group(1)
-                            rname = re.split(r'\[', match.group(2))[0].strip()
-                            if rname not in self.config["hidden"]:
-                                name = self.config["nicknames"].get(rname, rname)
-                                devices.append({"id": rid, "name": name, "h_name": rname, "active": "*" in line})
+                            raw_id = match.group(1)
+                            raw_name = re.split(r'\[', match.group(2))[0].strip()
+                            if raw_name not in self.config["hidden"]:
+                                name = self.config["nicknames"].get(raw_name, raw_name)
+                                sinks.append({"id": raw_id, "name": name, "h_name": raw_name, "active": "*" in line})
             
             elif platform.system() == "Windows":
-                if dev_type == "Sinks":
-                    cmd = 'powershell -NoProfile -Command "Get-CimInstance Win32_SoundDevice | Select-Object -ExpandProperty Name"'
-                else:
-                    cmd = 'powershell -NoProfile -Command "Get-PnpDevice -Class AudioEndpoint -Status OK | Select-Object -ExpandProperty FriendlyName"'
-                
-                proc = subprocess.run(cmd, capture_output=True, shell=True, creationflags=0x08000000)
-                try:
-                    raw_output = proc.stdout.decode('utf-8')
-                except UnicodeDecodeError:
-                    raw_output = proc.stdout.decode('cp1252', errors='replace')
-
-                for line in raw_output.splitlines():
-                    rname = line.strip()
-                    if rname and rname not in self.config["hidden"]:
-                        display_name = self.config["nicknames"].get(rname, rname)
-                        devices.append({"id": rname, "name": display_name, "h_name": rname, "active": False})
+                cmd = 'powershell -Command "Get-CimInstance Win32_SoundDevice | Select-Object -ExpandProperty Name"'
+                proc = subprocess.run(cmd, capture_output=True, text=True, shell=True, creationflags=0x08000000)
+                for line in proc.stdout.splitlines():
+                    name = line.strip()
+                    if name and name not in self.config["hidden"]:
+                        display_name = self.config["nicknames"].get(name, name)
+                        sinks.append({"id": name, "name": display_name, "h_name": name, "active": False})
         except: pass
-        return devices
+        return sinks
 
     def refresh_ui(self):
-        for w in self.button_frame.winfo_children(): w.destroy()
-        for w in self.mini_container.winfo_children(): w.destroy()
-
-        sinks = self.get_audio_devices("Sinks")
-        sources = self.get_audio_devices("Sources")
-
+        devices = self.get_audio_sinks()
+        for widget in self.button_frame.winfo_children(): widget.destroy()
+        
         if self.mini_mode:
-            # Row 1: Speakers (S)
-            s_row = tk.Frame(self.mini_container, bg='#121212')
-            s_row.pack(fill='x', pady=1)
-            tk.Label(s_row, text="S:", bg='#121212', fg='#1e88e5', font=('Sans', 7, 'bold'), width=2).pack(side='left')
-            for dev in sinks:
-                bg = '#1e88e5' if dev['active'] else '#1e1e1e'
-                tk.Button(s_row, text=dev['name'][:8], command=lambda d=dev['id']: self.switch_audio(d, False),
-                          bg=bg, fg='white', relief='flat', font=('Sans', 7), padx=4).pack(side='left', padx=2)
+            # Back to Main button in Mini Mode
+            tk.Button(self.button_frame, text="🔙", command=self.toggle_mini, 
+                      bg='#1e1e1e', fg='#1e88e5', relief='flat', font=('Sans', 10), width=3).pack(side='left', padx=(5,2), pady=5)
 
-            # Row 2: Microphones (M)
-            m_row = tk.Frame(self.mini_container, bg='#121212')
-            m_row.pack(fill='x', pady=1)
-            tk.Label(m_row, text="M:", bg='#121212', fg='#1e88e5', font=('Sans', 7, 'bold'), width=2).pack(side='left')
-            for dev in sources:
-                bg = '#1e88e5' if dev['active'] else '#1e1e1e'
-                tk.Button(m_row, text=dev['name'][:8], command=lambda d=dev['id']: self.switch_audio(d, True),
-                          bg=bg, fg='white', relief='flat', font=('Sans', 7), padx=4).pack(side='left', padx=2)
-        else:
-            tk.Label(self.button_frame, text="SPEAKERS", bg='#121212', fg='#666666', font=('Sans', 7, 'bold')).pack(fill='x', padx=10, pady=(10,2))
-            self.create_buttons(sinks, False)
-            tk.Label(self.button_frame, text="MICROPHONES", bg='#121212', fg='#666666', font=('Sans', 7, 'bold')).pack(fill='x', padx=10, pady=(15,2))
-            self.create_buttons(sources, True)
-
-    def create_buttons(self, devices, is_mic):
         for dev in devices:
-            bg = '#1e88e5' if dev['active'] else '#1e1e1e'
-            btn = tk.Button(self.button_frame, text=f"  {dev['name']}", 
-                            command=lambda d=dev['id'], m=is_mic: self.switch_audio(d, m),
-                            bg=bg, fg='white', relief='flat', anchor='w', padx=10, font=('Sans', 9))
-            btn.pack(fill='x', padx=10, pady=2)
+            is_active = dev.get('active', False) or (dev['id'] == self.active_device_id)
+            bg_color = '#1e88e5' if is_active else '#1e1e1e'
+            
+            if self.mini_mode:
+                # Slim horizontal buttons
+                btn = tk.Button(self.button_frame, text=dev['name'][:12], 
+                                command=lambda d=dev['id']: self.switch_audio(d),
+                                bg=bg_color, fg='white', relief='flat', font=('Sans', 8), width=12)
+                btn.pack(side='left', padx=2, pady=5)
+            else:
+                # Standard vertical buttons
+                btn = tk.Button(self.button_frame, text=f"  {dev['name']}", 
+                                command=lambda d=dev['id']: self.switch_audio(d),
+                                bg=bg_color if is_active else '#121212', fg='white', relief='flat', 
+                                anchor='w', padx=10, font=('Sans', 9))
+                btn.pack(fill='x', padx=10, pady=2)
+            
+            btn.bind("<Button-3>", lambda e, n=dev['h_name']: self.show_menu(e, n))
 
-    def switch_audio(self, device_id, is_mic):
+    def switch_audio(self, device_id):
+        self.active_device_id = device_id
         if platform.system() == "Linux":
-            subprocess.run(["wpctl", "set-default", str(device_id)])
+            subprocess.run(["wpctl", "set-default", device_id])
         elif platform.system() == "Windows":
             base_path = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.abspath(".")
             nircmd_path = os.path.join(base_path, "nircmd.exe")
-            role = "1" if not is_mic else "2" # 1 for Playback, 2 for Recording in NirCmd context
-            subprocess.run([nircmd_path, "setdefaultsounddevice", device_id, "1"], creationflags=0x08000000)
-            subprocess.run([nircmd_path, "setdefaultsounddevice", device_id, "2"], creationflags=0x08000000)
+            if os.path.exists(nircmd_path):
+                subprocess.run([nircmd_path, "setdefaultsounddevice", device_id, "1"], creationflags=0x08000000)
+                subprocess.run([nircmd_path, "setdefaultsounddevice", device_id, "2"], creationflags=0x08000000)
         self.refresh_ui()
 
     def start_move(self, event):
-        self.x, self.y = event.x, event.y
+        if self.active_menu: self.active_menu.destroy()
+        self.x = event.x; self.y = event.y
 
     def do_move(self, event):
-        x, y = self.root.winfo_x() + (event.x - self.x), self.root.winfo_y() + (event.y - self.y)
+        x = self.root.winfo_x() + (event.x - self.x)
+        y = self.root.winfo_y() + (event.y - self.y)
         self.root.geometry(f"+{x}+{y}")
 
 if __name__ == "__main__":

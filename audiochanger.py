@@ -155,3 +155,5 @@ class AudioSwitcher:
 
 if __name__ == "__main__":
     tk.Tk().mainloop() if not (app := AudioSwitcher(tk.Tk())) else None
+
+    tk.Tk().mainloop() if not (app := AudioSwitcher(tk.Tk())) else None

@@ -10,20 +10,21 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4.2.2 # Explicitly use latest v4 patch
+      - uses: actions/checkout@v4.2.2
       - uses: actions/setup-python@v6 
         with:
           python-version: '3.11'
       - name: Build EXE
         run: |
           pip install pyinstaller
-          pyinstaller --onefile --noconsole --icon="app_icon.ico" --add-data "nircmd.exe;." --add-data "app_icon.ico;." audiochanger.py
+          # Using --add-binary for nircmd.exe ensures it's treated as an executable resource
+          pyinstaller --onefile --noconsole --icon="app_icon.ico" --add-binary "nircmd.exe;." --add-data "app_icon.ico;." audiochanger.py
       - name: Create Installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
         with:
           path: installer.iss
       - name: Upload Windows
-        uses: actions/upload-artifact@v4.6.0 # Explicitly use latest v4 patch
+        uses: actions/upload-artifact@v4.6.0
         with:
           name: Audio-Switcher-Windows
           path: dist/AudioSwitcherInstaller.exe

@@ -4,6 +4,7 @@ import subprocess, re, platform, os, sys, json
 
 # --- PYINSTALLER HELPER ---
 def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
         base_path = sys._MEIPASS
     except Exception:
@@ -77,7 +78,7 @@ class AudioSwitcher:
         devices = []
         try:
             if platform.system() == "Linux":
-                # --- LINUX (UNTOUCHED) ---
+                # --- LINUX LOGIC (UNTOUCHED) ---
                 result = subprocess.run(["wpctl", "status"], capture_output=True, text=True)
                 stdout = result.stdout
                 audio_start = stdout.find("Audio")
@@ -96,20 +97,20 @@ class AudioSwitcher:
                                 devices.append({"id": rid, "name": name, "h_name": rname, "active": "*" in line})
             
             elif platform.system() == "Windows":
-                # Use WMI via PowerShell (Built-in, No modules needed) to get Names
-                # Then use NirCmd for switching.
-                ps_cmd = "Get-CimInstance Win32_SoundDevice | Select-Object Name | ConvertTo-Json"
+                # PowerShell query for precise names from the system
+                ps_cmd = "Get-AudioDevice -List | Select-Object Name, Default, Type | ConvertTo-Json"
                 result = subprocess.run(["powershell", "-Command", ps_cmd], capture_output=True, text=True, startupinfo=get_startup_info())
                 
                 if result.stdout.strip():
                     data = json.loads(result.stdout)
                     items = data if isinstance(data, list) else [data]
+                    win_filter = "Playback" if dev_type == "Sinks" else "Recording"
                     for dev in items:
-                        rname = dev.get("Name")
-                        if rname and rname not in self.config["hidden"]:
-                            name = self.config["nicknames"].get(rname, rname)
-                            # On Windows, we'll mark as active if it matches NirCmd's "default"
-                            devices.append({"id": rname, "name": name, "h_name": rname, "active": False})
+                        if dev.get("Type") == win_filter:
+                            full_name = dev.get("Name")
+                            if full_name and full_name not in self.config["hidden"]:
+                                nickname = self.config["nicknames"].get(full_name, full_name)
+                                devices.append({"id": full_name, "name": nickname, "h_name": full_name, "active": dev.get("Default", False)})
         except: pass
         return devices
 
@@ -118,10 +119,11 @@ class AudioSwitcher:
             subprocess.run(["wpctl", "set-default", str(device_id)])
         elif platform.system() == "Windows":
             nircmd_bin = resource_path("nircmd.exe")
-            # Switch all 3 roles silently
             si = get_startup_info()
+            # Loop all 3 roles (0=Console, 1=Multimedia, 2=Communications) to force a hard switch
             for role in ["0", "1", "2"]:
-                subprocess.run([nircmd_bin, "setdefaultsounddevice", str(device_id), role], startupinfo=si)
+                # Quotes around the device_id name are critical for NirCmd
+                subprocess.run([nircmd_bin, "setdefaultsounddevice", f"{device_id}", role], startupinfo=si)
         self.refresh_ui()
 
     def refresh_ui(self):
@@ -130,7 +132,6 @@ class AudioSwitcher:
         sinks = self.get_audio_devices("Sinks")
         sources = self.get_audio_devices("Sources")
         
-        # UI rendering logic continues exactly as before...
         if self.mini_mode:
             s_row = tk.Frame(self.mini_container, bg='#121212'); s_row.pack(fill='x', pady=1)
             tk.Label(s_row, text="S:", bg='#121212', fg='#1e88e5', font=('Sans', 7, 'bold'), width=2).pack(side='left')
@@ -154,6 +155,15 @@ class AudioSwitcher:
             btn = tk.Button(self.button_frame, text=f"  {dev['name']}", command=lambda d=dev['id']: self.switch_audio(d), bg=bg, fg='white', relief='flat', anchor='w', padx=10, font=('Sans', 9))
             btn.pack(fill='x', padx=10, pady=2)
 
+    def load_config(self):
+        try:
+            if os.path.exists(self.config_path):
+                with open(self.config_path, 'r') as f:
+                    data = json.load(f)
+                    return {"nicknames": data.get("nicknames", {}), "hidden": data.get("hidden", [])}
+        except: pass
+        return {"nicknames": {}, "hidden": []}
+
     def start_move(self, event):
         self.x, self.y = event.x, event.y
 
@@ -164,37 +174,20 @@ class AudioSwitcher:
     def toggle_mini(self):
         self.mini_mode = not self.mini_mode
         if self.mini_mode:
-            self.root.geometry(self.mini_geo)
-            self.root.attributes("-topmost", True)
-            self.refresh_btn.pack_forget()
-            self.main_container.pack_forget()
-            self.exit_btn.pack_forget()
+            self.root.geometry(self.mini_geo); self.root.attributes("-topmost", True)
+            self.refresh_btn.pack_forget(); self.main_container.pack_forget(); self.exit_btn.pack_forget()
             self.mini_container.pack(fill='both', expand=True, padx=10, pady=5)
-            self.ver_label.config(text="  MINI")
-            self.mini_btn.config(text="▲")
+            self.ver_label.config(text="  MINI"); self.mini_btn.config(text="▲")
         else:
-            self.root.geometry(self.main_geo)
-            self.root.attributes("-topmost", False)
-            self.mini_container.pack_forget()
-            self.refresh_btn.pack(pady=5, padx=15, fill='x')
-            self.main_container.pack(fill='both', expand=True)
-            self.exit_btn.pack(side='right')
-            self.ver_label.config(text="  AUDIO v1.0.3")
-            self.mini_btn.config(text="▢")
+            self.root.geometry(self.main_geo); self.root.attributes("-topmost", False)
+            self.mini_container.pack_forget(); self.refresh_btn.pack(pady=5, padx=15, fill='x'); self.main_container.pack(fill='both', expand=True)
+            self.exit_btn.pack(side='right'); self.ver_label.config(text="  AUDIO v1.0.3"); self.mini_btn.config(text="▢")
         self.refresh_ui()
-
-    def load_config(self):
-        try:
-            if os.path.exists(self.config_path):
-                with open(self.config_path, 'r') as f:
-                    data = json.load(f)
-                    return {"nicknames": data.get("nicknames", {}), "hidden": data.get("hidden", [])}
-        except: pass
-        return {"nicknames": {}, "hidden": []}
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = AudioSwitcher(root)
     root.mainloop()
+
 
 

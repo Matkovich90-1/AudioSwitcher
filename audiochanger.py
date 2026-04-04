@@ -4,13 +4,21 @@ import subprocess, re, platform, os, sys, json
 
 # --- PYINSTALLER HELPER ---
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
+
+# --- WINDOWS HIDER ---
+def get_startup_info():
+    """Returns startupinfo to hide console windows on Windows."""
+    if platform.system() == "Windows":
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        si.wShowWindow = 0 # SW_HIDE
+        return si
+    return None
 
 class AudioSwitcher:
     def __init__(self, root):
@@ -18,7 +26,6 @@ class AudioSwitcher:
         self.root.title("Audio Switcher")
         self.mini_mode = False
         
-        # --- POSITION & SIZE ---
         self.main_geo = "320x300+15+15"
         self.mini_geo = "420x95+15+15" 
         self.root.geometry(self.main_geo) 
@@ -30,8 +37,6 @@ class AudioSwitcher:
             try: ctypes.windll.shcore.SetProcessDpiAwareness(1)
             except: pass
             self.root.overrideredirect(True)
-            # Run the automation fix for Windows dependencies
-            self.setup_windows_deps()
         else:
             self.config_path = os.path.expanduser('~/.audio_switcher_config.json')
             self.root.attributes('-type', 'splash') 
@@ -43,13 +48,10 @@ class AudioSwitcher:
         # --- UI LAYOUT ---
         self.title_bar = tk.Frame(root, bg='#1e1e1e', bd=0)
         self.title_bar.pack(fill='x')
-        
         self.ver_label = tk.Label(self.title_bar, text="  AUDIO v1.0.3", bg='#1e1e1e', fg='#666666', font=('Sans', 7, 'bold'))
         self.ver_label.pack(side='left', pady=4)
-        
         self.exit_btn = tk.Button(self.title_bar, text="✕", command=root.quit, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8), padx=10, activebackground='#cc3333')
         self.exit_btn.pack(side='right')
-        
         self.mini_btn = tk.Button(self.title_bar, text="▢", command=self.toggle_mini, bg='#1e1e1e', fg='#666666', relief='flat', font=('Sans', 8))
         self.mini_btn.pack(side='right', padx=5)
 
@@ -63,7 +65,6 @@ class AudioSwitcher:
         self.canvas = tk.Canvas(self.main_container, bg='#121212', highlightthickness=0)
         self.scrollbar = tk.Scrollbar(self.main_container, orient="vertical", command=self.canvas.yview)
         self.button_frame = tk.Frame(self.canvas, bg='#121212')
-
         self.button_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self.canvas.create_window((0, 0), window=self.button_frame, anchor="nw", width=310)
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
@@ -72,17 +73,93 @@ class AudioSwitcher:
 
         self.refresh_ui()
 
-    def setup_windows_deps(self):
-        """Automates the installation of AudioDeviceCmdlets for the current user."""
+    def get_audio_devices(self, dev_type="Sinks"):
+        devices = []
         try:
-            # Check if module exists
-            check = subprocess.run(["powershell", "-Command", "Get-Module -ListAvailable AudioDeviceCmdlets"], capture_output=True, text=True)
-            if not check.stdout.strip():
-                # Install silently for CurrentUser (no Admin needed usually)
-                install_cmd = "Install-Module -Name AudioDeviceCmdlets -Scope CurrentUser -Force -SkipPublisherCheck"
-                subprocess.run(["powershell", "-Command", install_cmd], capture_output=True)
-        except:
-            pass
+            if platform.system() == "Linux":
+                # --- LINUX (UNTOUCHED) ---
+                result = subprocess.run(["wpctl", "status"], capture_output=True, text=True)
+                stdout = result.stdout
+                audio_start = stdout.find("Audio")
+                if audio_start == -1: return []
+                audio_section = stdout[audio_start:]
+                pattern = rf"{dev_type}:(.*?)(?:\n\s*├─|\n\s*└─|\Z)"
+                match_section = re.search(pattern, audio_section, re.DOTALL)
+                if match_section:
+                    for line in match_section.group(1).splitlines():
+                        match = re.search(r'(\d+)\.\s+(.*)', line)
+                        if match:
+                            rid = match.group(1)
+                            rname = re.split(r'\[', match.group(2)).strip()
+                            if rname not in self.config["hidden"]:
+                                name = self.config["nicknames"].get(rname, rname)
+                                devices.append({"id": rid, "name": name, "h_name": rname, "active": "*" in line})
+            
+            elif platform.system() == "Windows":
+                # Use WMI via PowerShell (Built-in, No modules needed) to get Names
+                # Then use NirCmd for switching.
+                ps_cmd = "Get-CimInstance Win32_SoundDevice | Select-Object Name | ConvertTo-Json"
+                result = subprocess.run(["powershell", "-Command", ps_cmd], capture_output=True, text=True, startupinfo=get_startup_info())
+                
+                if result.stdout.strip():
+                    data = json.loads(result.stdout)
+                    items = data if isinstance(data, list) else [data]
+                    for dev in items:
+                        rname = dev.get("Name")
+                        if rname and rname not in self.config["hidden"]:
+                            name = self.config["nicknames"].get(rname, rname)
+                            # On Windows, we'll mark as active if it matches NirCmd's "default"
+                            devices.append({"id": rname, "name": name, "h_name": rname, "active": False})
+        except: pass
+        return devices
+
+    def switch_audio(self, device_id):
+        if platform.system() == "Linux":
+            subprocess.run(["wpctl", "set-default", str(device_id)])
+        elif platform.system() == "Windows":
+            nircmd_bin = resource_path("nircmd.exe")
+            # Switch all 3 roles silently
+            si = get_startup_info()
+            for role in ["0", "1", "2"]:
+                subprocess.run([nircmd_bin, "setdefaultsounddevice", str(device_id), role], startupinfo=si)
+        self.refresh_ui()
+
+    def refresh_ui(self):
+        for w in self.button_frame.winfo_children(): w.destroy()
+        for w in self.mini_container.winfo_children(): w.destroy()
+        sinks = self.get_audio_devices("Sinks")
+        sources = self.get_audio_devices("Sources")
+        
+        # UI rendering logic continues exactly as before...
+        if self.mini_mode:
+            s_row = tk.Frame(self.mini_container, bg='#121212'); s_row.pack(fill='x', pady=1)
+            tk.Label(s_row, text="S:", bg='#121212', fg='#1e88e5', font=('Sans', 7, 'bold'), width=2).pack(side='left')
+            for dev in sinks:
+                bg = '#1e88e5' if dev['active'] else '#1e1e1e'
+                tk.Button(s_row, text=dev['name'][:8], command=lambda d=dev['id']: self.switch_audio(d), bg=bg, fg='white', relief='flat', font=('Sans', 7), padx=4).pack(side='left', padx=2)
+            m_row = tk.Frame(self.mini_container, bg='#121212'); m_row.pack(fill='x', pady=1)
+            tk.Label(m_row, text="M:", bg='#121212', fg='#1e88e5', font=('Sans', 7, 'bold'), width=2).pack(side='left')
+            for dev in sources:
+                bg = '#1e88e5' if dev['active'] else '#1e1e1e'
+                tk.Button(m_row, text=dev['name'][:8], command=lambda d=dev['id']: self.switch_audio(d), bg=bg, fg='white', relief='flat', font=('Sans', 7), padx=4).pack(side='left', padx=2)
+        else:
+            tk.Label(self.button_frame, text="SPEAKERS", bg='#121212', fg='#666666', font=('Sans', 7, 'bold')).pack(fill='x', padx=10, pady=(10,2))
+            self.create_buttons(sinks)
+            tk.Label(self.button_frame, text="MICROPHONES", bg='#121212', fg='#666666', font=('Sans', 7, 'bold')).pack(fill='x', padx=10, pady=(15,2))
+            self.create_buttons(sources)
+
+    def create_buttons(self, devices):
+        for dev in devices:
+            bg = '#1e88e5' if dev['active'] else '#1e1e1e'
+            btn = tk.Button(self.button_frame, text=f"  {dev['name']}", command=lambda d=dev['id']: self.switch_audio(d), bg=bg, fg='white', relief='flat', anchor='w', padx=10, font=('Sans', 9))
+            btn.pack(fill='x', padx=10, pady=2)
+
+    def start_move(self, event):
+        self.x, self.y = event.x, event.y
+
+    def do_move(self, event):
+        x, y = self.root.winfo_x() + (event.x - self.x), self.root.winfo_y() + (event.y - self.y)
+        self.root.geometry(f"+{x}+{y}")
 
     def toggle_mini(self):
         self.mini_mode = not self.mini_mode
@@ -115,97 +192,9 @@ class AudioSwitcher:
         except: pass
         return {"nicknames": {}, "hidden": []}
 
-    def get_audio_devices(self, dev_type="Sinks"):
-        devices = []
-        try:
-            if platform.system() == "Linux":
-                # --- LINUX LOGIC (UNTOUCHED) ---
-                result = subprocess.run(["wpctl", "status"], capture_output=True, text=True)
-                stdout = result.stdout
-                audio_start = stdout.find("Audio")
-                if audio_start == -1: return []
-                audio_section = stdout[audio_start:]
-                pattern = rf"{dev_type}:(.*?)(?:\n\s*├─|\n\s*└─|\Z)"
-                match_section = re.search(pattern, audio_section, re.DOTALL)
-                if match_section:
-                    for line in match_section.group(1).splitlines():
-                        match = re.search(r'(\d+)\.\s+(.*)', line)
-                        if match:
-                            rid = match.group(1)
-                            rname = re.split(r'\[', match.group(2))[0].strip()
-                            if rname not in self.config["hidden"]:
-                                name = self.config["nicknames"].get(rname, rname)
-                                devices.append({"id": rid, "name": name, "h_name": rname, "active": "*" in line})
-            
-            elif platform.system() == "Windows":
-                # Using PowerShell to get a JSON list of devices
-                ps_cmd = "Get-AudioDevice -List | Select-Object Name, Default, Type | ConvertTo-Json"
-                result = subprocess.run(["powershell", "-Command", ps_cmd], capture_output=True, text=True)
-                if result.stdout.strip():
-                    data = json.loads(result.stdout)
-                    items = data if isinstance(data, list) else [data]
-                    win_filter = "Playback" if dev_type == "Sinks" else "Recording"
-                    for dev in items:
-                        if dev.get("Type") == win_filter:
-                            rname = dev.get("Name")
-                            if rname not in self.config["hidden"]:
-                                name = self.config["nicknames"].get(rname, rname)
-                                devices.append({
-                                    "id": rname, 
-                                    "name": name, 
-                                    "h_name": rname, 
-                                    "active": dev.get("Default", False)
-                                })
-        except: pass
-        return devices
-
-    def refresh_ui(self):
-        for w in self.button_frame.winfo_children(): w.destroy()
-        for w in self.mini_container.winfo_children(): w.destroy()
-        sinks = self.get_audio_devices("Sinks")
-        sources = self.get_audio_devices("Sources")
-        if self.mini_mode:
-            s_row = tk.Frame(self.mini_container, bg='#121212'); s_row.pack(fill='x', pady=1)
-            tk.Label(s_row, text="S:", bg='#121212', fg='#1e88e5', font=('Sans', 7, 'bold'), width=2).pack(side='left')
-            for dev in sinks:
-                bg = '#1e88e5' if dev['active'] else '#1e1e1e'
-                tk.Button(s_row, text=dev['name'][:8], command=lambda d=dev['id']: self.switch_audio(d), bg=bg, fg='white', relief='flat', font=('Sans', 7), padx=4).pack(side='left', padx=2)
-            m_row = tk.Frame(self.mini_container, bg='#121212'); m_row.pack(fill='x', pady=1)
-            tk.Label(m_row, text="M:", bg='#121212', fg='#1e88e5', font=('Sans', 7, 'bold'), width=2).pack(side='left')
-            for dev in sources:
-                bg = '#1e88e5' if dev['active'] else '#1e1e1e'
-                tk.Button(m_row, text=dev['name'][:8], command=lambda d=dev['id']: self.switch_audio(d), bg=bg, fg='white', relief='flat', font=('Sans', 7), padx=4).pack(side='left', padx=2)
-        else:
-            tk.Label(self.button_frame, text="SPEAKERS", bg='#121212', fg='#666666', font=('Sans', 7, 'bold')).pack(fill='x', padx=10, pady=(10,2))
-            self.create_buttons(sinks)
-            tk.Label(self.button_frame, text="MICROPHONES", bg='#121212', fg='#666666', font=('Sans', 7, 'bold')).pack(fill='x', padx=10, pady=(15,2))
-            self.create_buttons(sources)
-
-    def create_buttons(self, devices):
-        for dev in devices:
-            bg = '#1e88e5' if dev['active'] else '#1e1e1e'
-            btn = tk.Button(self.button_frame, text=f"  {dev['name']}", command=lambda d=dev['id']: self.switch_audio(d), bg=bg, fg='white', relief='flat', anchor='w', padx=10, font=('Sans', 9))
-            btn.pack(fill='x', padx=10, pady=2)
-
-    def switch_audio(self, device_id):
-        if platform.system() == "Linux":
-            subprocess.run(["wpctl", "set-default", str(device_id)])
-        elif platform.system() == "Windows":
-            nircmd_bin = resource_path("nircmd.exe")
-            # Switch all 3 Windows roles (0=Console, 1=Multimedia, 2=Communications)
-            for role in ["0", "1", "2"]:
-                subprocess.run([nircmd_bin, "setdefaultsounddevice", str(device_id), role])
-        self.refresh_ui()
-
-    def start_move(self, event):
-        self.x, self.y = event.x, event.y
-
-    def do_move(self, event):
-        x, y = self.root.winfo_x() + (event.x - self.x), self.root.winfo_y() + (event.y - self.y)
-        self.root.geometry(f"+{x}+{y}")
-
 if __name__ == "__main__":
     root = tk.Tk()
     app = AudioSwitcher(root)
     root.mainloop()
+
 
